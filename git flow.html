@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Workflow Live Visualizer</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --accent-init: #ec4899;
+            --accent-work: #38bdf8;
+            --accent-stage: #fbbf24;
+            --accent-local: #34d399;
+            --accent-remote: #a78bfa;
+            --border: #334155;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 800px;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, var(--accent-work), var(--accent-local), var(--accent-remote));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+
+        /* Controls Area */
+        .controls {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            align-items: center;
+            max-width: 1300px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 50;
+        }
+
+        .controls label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 0.2rem;
+        }
+
+        .controls input {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
+            width: 140px;
+        }
+
+        .controls input:focus {
+            border-color: var(--primary);
+        }
+
+        .btn {
+            background-color: var(--border);
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            filter: brightness(1.15);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Highlighted Controls */
+        .btn-init { 
+            background-color: var(--accent-init); 
+            box-shadow: 0 0 10px rgba(236, 72, 153, 0.2);
+            animation: pulse-border 2s infinite;
+        }
+        .btn-add { background-color: #0284c7; }
+        .btn-commit { background-color: #d97706; }
+        .btn-push { background-color: #059669; }
+        .btn-pull { background-color: #7c3aed; }
+        .btn-reset { background-color: var(--danger); }
+        .btn-create { background-color: #475569; }
+
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(236, 72, 153, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0); }
+        }
+
+        /* Board Container */
+        .board-container {
+            width: 100%;
+            max-width: 1300px;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            position: relative;
+        }
+
+        /* Scopes */
+        .scope-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 1.5rem;
+            width: 100%;
+        }
+
+        .scope {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            padding: 1rem;
+            position: relative;
+            background: rgba(30, 41, 59, 0.1);
+            transition: all 0.4s ease;
+        }
+
+        .scope.not-initialized {
+            opacity: 0.45;
+            pointer-events: none;
+            filter: grayscale(80%);
+        }
+
+        .scope::before {
+            content: attr(data-label);
+            position: absolute;
+            top: -12px;
+            left: 20px;
+            background-color: var(--bg-color);
+            padding: 0 10px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+
+        .scope.initialized {
+            border-color: var(--accent-init);
+            background: rgba(236, 72, 153, 0.02);
+        }
+
+        /* Overlay */
+        .uninitialized-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border-radius: 16px;
+            transition: all 0.5s ease;
+            text-align: center;
+            padding: 2rem;
+            border: 2px dashed var(--accent-init);
+        }
+
+        .uninitialized-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+            visibility: hidden;
+        }
+
+        .uninitialized-overlay h2 {
+            color: var(--accent-init);
+            font-size: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .uninitialized-overlay p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            max-width: 450px;
+            line-height: 1.4;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Stages */
+        .stages-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .stage-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            min-height: 290px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stage-card.highlight {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .stage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        .stage-title {
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .stage-title-1 { color: var(--accent-work); }
+        .stage-title-2 { color: var(--accent-stage); }
+        .stage-title-3 { color: var(--accent-local); }
+        .stage-title-4 { color: var(--accent-remote); }
+
+        .stage-count {
+            font-size: 0.75rem;
+            background: var(--border);
+            padding: 0.15rem 0.5rem;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+
+        .file-list {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            overflow-y: auto;
+            max-height: 220px;
+        }
+
+        /* File list entries */
+        .file-item {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            font-family: monospace;
+            animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-item.modified {
+            border-left: 3px solid #f43f5e;
+        }
+        .file-item.untracked {
+            border-left: 3px solid #a1a1aa;
+        }
+        .file-item.staged {
+            border-left: 3px solid var(--accent-stage);
+        }
+        .file-item.committed {
+            border-left: 3px solid var(--accent-local);
+        }
+        .file-item.remote {
+            border-left: 3px solid var(--accent-remote);
+        }
+        .file-item.tracking-folder {
+            border: 1px solid var(--accent-init);
+            background: rgba(236, 72, 153, 0.1);
+            font-weight: bold;
+            color: var(--accent-init);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.85); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Terminal Window */
+        .terminal {
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            color: #a7f3d0;
+            height: 155px;
+            overflow-y: auto;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 1300px;
+        }
+
+        .terminal .prefix {
+            color: var(--accent-local);
+        }
+
+        .terminal .cmd {
+            color: var(--text-main);
+        }
+
+        .terminal .output {
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        /* Dynamic Visual Fly particle */
+        .flying-item {
+            position: fixed;
+            background: var(--accent-stage);
+            color: #000;
+            padding: 4px 8px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 4px;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transform: translate(-50%, -50%);
+            transition: left 0.65s cubic-bezier(0.25, 1, 0.5, 1), top 0.65s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.65s ease;
+        }
+
+        .empty-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-style: italic;
+            border: 1px dashed rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        /* Visual Initialization effect classes */
+        .laser-flash {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 12px;
+            background: var(--accent-init);
+            opacity: 0.3;
+            animation: laserFade 0.7s ease-out forwards;
+            pointer-events: none;
+            z-index: 10;
+        }
+        @keyframes laserFade {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            100% { transform: scale(1.05); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Git Workflow Live Visualizer</h1>
+        <p>Interactive platform mapping local and remote repository zones. Initiate your project using git init to build the tracking framework and run transitions.</p>
+    </header>
+
+    <!-- Controls Panel -->
+    <div class="controls">
+        <button class="btn btn-init" id="initBtn">git init</button>
+        
+        <div style="border-left: 1px solid var(--border); height: 24px; margin: 0 0.25rem;"></div>
+
+        <label for="filenameInput">Filename:</label>
+        <input type="text" id="filenameInput" placeholder="index.html" value="index.html" disabled>
+        
+        <button class="btn btn-create" id="createFileBtn" disabled>Create File</button>
+        <button class="btn btn-create" id="modifyFileBtn" disabled>Modify File</button>
+        
+        <div style="border-left: 1px solid var(--border); height: 24px; margin: 0 0.25rem;"></div>
+
+        <button class="btn btn-add" id="addBtn" disabled>git add .</button>
+        <button class="btn btn-commit" id="commitBtn" disabled>git commit -m</button>
+        <button class="btn btn-push" id="pushBtn" disabled>git push</button>
+        <button class="btn btn-pull" id="pullBtn" disabled>git pull</button>
+        <button class="btn btn-reset" id="resetBtn">Reset</button>
+    </div>
+
+    <!-- Interface Workspace Board -->
+    <div class="board-container">
+        <!-- Blocking Initialization overlay -->
+        <div class="uninitialized-overlay" id="blockOverlay">
+            <h2>Local Working Folder Unlinked</h2>
+            <p>Git directory tracking is currently inactive. Run <strong>git init</strong> in the operations bar to build the hidden tracking architecture and unlock all options.</p>
+            <button class="btn btn-init" onclick="gitInit()">Initialize Repository (git init)</button>
+        </div>
+
+        <div class="scope-container">
+            <!-- Local machine zones -->
+            <div class="scope not-initialized" id="localScope" data-label="Local Machine (Ready)">
+                <div class="stages-grid">
+                    <!-- Stage 1 -->
+                    <div class="stage-card" id="stage-working">
+                        <div class="stage-header">
+                            <span class="stage-title stage-title-1">Workspace</span>
+                            <span class="stage-count" id="count-working">0 Files</span>
+                        </div>
+                        <div class="file-list" id="list-working">
+                            <div class="empty-placeholder">Workspace is empty. Create a file to begin!</div>
+                        </div>
+                    </div>
+
+                    <!-- Stage 2 -->
+                    <div class="stage-card" id="stage-staging">
+                        <div class="stage-header">
+                            <span class="stage-title stage-title-2">Staging Area</span>
+                            <span class="stage-count" id="count-staging">0 Files</span>
+                        </div>
+                        <div class="file-list" id="list-staging">
+                            <div class="empty-placeholder">No files staged. Use 'git add' to mark files for commit.</div>
+                        </div>
+                    </div>
+
+                    <!-- Stage 3 -->
+                    <div class="stage-card" id="stage-local">
+                        <div class="stage-header">
+                            <span class="stage-title stage-title-3">Local Repository</span>
+                            <span class="stage-count" id="count-local">0 Commits</span>
+                        </div>
+                        <div class="file-list" id="list-local">
+                            <div class="empty-placeholder">No commits recorded yet in the .git folder.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Online / cloud storage -->
+            <div class="scope not-initialized" id="remoteScope" data-label="Remote Server (GitHub)">
+                <div class="stage-card" id="stage-remote" style="min-height: 100%;">
+                    <div class="stage-header">
+                        <span class="stage-title stage-title-4">GitHub (Remote)</span>
+                        <span class="stage-count" id="count-remote">0 Files</span>
+                    </div>
+                    <div class="file-list" id="list-remote">
+                        <!-- Default placeholder file mock is now present only in GitHub cloud before download -->
+                        <div class="file-item remote" id="file-remote-README.md">
+                            <span>📄 README.md</span>
+                            <span style="color: var(--accent-remote); font-size: 0.7rem;">(origin)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal -->
+    <div style="width: 100%; max-width: 1300px; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--text-muted); font-weight: 700;">LIVE TERMINAL OUTPUT:</div>
+    <div class="terminal" id="terminal">
+        <span class="prefix">D:\Ganesh Training&gt;</span> <span class="output">Platform idle. Initialize the local tracking directory using the 'git init' command to continue.</span><br>
+    </div>
+
+    <script>
+        // Track visual states
+        let isInitialized = false;
+        let files = {};
+        let commits = [];
+
+        // DOM Element cache
+        const consoleTerm = document.getElementById('terminal');
+        const overlay = document.getElementById('blockOverlay');
+        const localScope = document.getElementById('localScope');
+        const remoteScope = document.getElementById('remoteScope');
+        
+        const initBtn = document.getElementById('initBtn');
+        const filenameInput = document.getElementById('filenameInput');
+        const createFileBtn = document.getElementById('createFileBtn');
+        const modifyFileBtn = document.getElementById('modifyFileBtn');
+        const addBtn = document.getElementById('addBtn');
+        const commitBtn = document.getElementById('commitBtn');
+        const pushBtn = document.getElementById('pushBtn');
+        const pullBtn = document.getElementById('pullBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // Initial setup for events
+        initBtn.addEventListener('click', gitInit);
+        createFileBtn.addEventListener('click', createFile);
+        modifyFileBtn.addEventListener('click', modifyFile);
+        addBtn.addEventListener('click', gitAdd);
+        commitBtn.addEventListener('click', gitCommit);
+        pushBtn.addEventListener('click', gitPush);
+        pullBtn.addEventListener('click', gitPull);
+        resetBtn.addEventListener('click', resetAll);
+
+        function printToTerminal(cmd, outputLines = []) {
+            let chunk = `<div><span class="prefix">D:\\Ganesh Training&gt;</span> <span class="cmd">${cmd}</span></div>`;
+            outputLines.forEach(line => {
+                chunk += `<div class="output">${line}</div>`;
+            });
+            consoleTerm.innerHTML += chunk;
+            consoleTerm.scrollTop = consoleTerm.scrollHeight;
+        }
+
+        function triggerHighlight(elementId) {
+            const card = document.getElementById(elementId);
+            if (!card) return;
+            card.classList.add('highlight');
+            setTimeout(() => card.classList.remove('highlight'), 800);
+        }
+
+        // Particle generator
+        function createFlyEffect(startSelector, endSelector, text, color) {
+            const startNode = document.querySelector(startSelector);
+            const endNode = document.querySelector(endSelector);
+            if (!startNode || !endNode) return;
+
+            const startRect = startNode.getBoundingClientRect();
+            const endRect = endNode.getBoundingClientRect();
+
+            // Set coordinates directly for animations
+            const dot = document.createElement('div');
+            dot.className = 'flying-item';
+            
+            // Fix positioning offset
+            const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+            const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+            
+            dot.style.left = `${startRect.left + startRect.width / 2 + scrollX}px`;
+            dot.style.top = `${startRect.top + startRect.height / 2 + scrollY}px`;
+            dot.style.backgroundColor = color;
+            dot.innerText = text;
+
+            document.body.appendChild(dot);
+
+            // Shift coordinate positioning directly
+            setTimeout(() => {
+                dot.style.left = `${endRect.left + endRect.width / 2 + scrollX}px`;
+                dot.style.top = `${endRect.top + endRect.height / 2 + scrollY}px`;
+            }, 50);
+
+            // Hide and wipe when transformation is complete
+            setTimeout(() => {
+                dot.style.opacity = '0';
+                setTimeout(() => dot.remove(), 200);
+            }, 600);
+        }
+
+        function updateBoard() {
+            const listWorking = document.getElementById('list-working');
+            const listStaging = document.getElementById('list-staging');
+            const listLocal = document.getElementById('list-local');
+            const listRemote = document.getElementById('list-remote');
+
+            listWorking.innerHTML = '';
+            listStaging.innerHTML = '';
+            listLocal.innerHTML = '';
+            
+            // Do not clear remote here so README is always preserved on start
+
+            let counts = { working: 0, staged: 0, committed: 0, remote: 0 };
+
+            // Git tracker initialization banner state
+            if (isInitialized && !files['.git']) {
+                listLocal.innerHTML += `
+                    <div class="file-item tracking-folder" id="dir-init-marker">
+                        <span>📁 .git tracker</span>
+                        <span style="color: var(--accent-init); font-size: 0.7rem;">(initialized)</span>
+                    </div>
+                `;
+            }
+
+            // Render working/staging directories
+            Object.values(files).forEach(f => {
+                if (f.state === 'working') {
+                    counts.working++;
+                    const badge = f.type === 'untracked' ? '<span style="color: #94a3b8; font-size: 0.7rem;">(untracked)</span>' : '<span style="color: #f43f5e; font-size: 0.7rem;">(modified)</span>';
+                    listWorking.innerHTML += `
+                        <div class="file-item ${f.type}" id="file-work-${f.name}">
+                            <span>📄 ${f.name}</span>
+                            ${badge}
+                        </div>
+                    `;
+                } else if (f.state === 'staged') {
+                    counts.staged++;
+                    listStaging.innerHTML += `
+                        <div class="file-item staged" id="file-stage-${f.name}">
+                            <span>📄 ${f.name}</span>
+                            <span style="color: var(--accent-stage); font-size: 0.7rem;">(staged)</span>
+                        </div>
+                    `;
+                }
+            });
+
+            // Display Local database snapshots
+            commits.forEach((c) => {
+                counts.committed++;
+                let fileNamesList = c.files.join(', ');
+                listLocal.innerHTML += `
+                    <div class="file-item committed" id="commit-${c.hash}">
+                        <div>
+                            <span style="font-weight: bold; color: var(--accent-local); font-size: 0.7rem;">[${c.hash}]</span>
+                            <span style="display:block; font-size: 0.8rem; font-family: sans-serif; font-weight:600;">"${c.msg}"</span>
+                            <span style="display:block; font-size: 0.7rem; color: var(--text-muted);">${fileNamesList}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Count remaining remote entries
+            let remList = listRemote.getElementsByClassName('file-item');
+            counts.remote = remList.length;
+
+            // Display placeholders for empty states
+            if (counts.working === 0) listWorking.innerHTML = '<div class="empty-placeholder">Workspace is empty. Create a file to begin!</div>';
+            if (counts.staged === 0) listStaging.innerHTML = '<div class="empty-placeholder">No files staged. Use "git add" to mark files for commit.</div>';
+            if (counts.committed === 0 && !isInitialized) listLocal.innerHTML = '<div class="empty-placeholder">No commits recorded yet in the .git folder.</div>';
+            
+            // Adjust counting labels
+            document.getElementById('count-working').innerText = `${counts.working} File${counts.working !== 1 ? 's' : ''}`;
+            document.getElementById('count-staging').innerText = `${counts.staged} File${counts.staged !== 1 ? 's' : ''}`;
+            document.getElementById('count-local').innerText = `${counts.committed} Commit${counts.committed !== 1 ? 's' : ''}`;
+            document.getElementById('count-remote').innerText = `${counts.remote} File${counts.remote !== 1 ? 's' : ''}`;
+        }
+
+        // Action: Initialization
+        function gitInit() {
+            isInitialized = true;
+
+            // Wipe blocker overlay and un-grayscale
+            overlay.classList.add('hidden');
+            localScope.classList.remove('not-initialized');
+            remoteScope.classList.remove('not-initialized');
+
+            // Apply specific highlight visual effects
+            localScope.classList.add('initialized');
+
+            // Set buttons active
+            initBtn.disabled = true;
+            filenameInput.disabled = false;
+            createFileBtn.disabled = false;
+            modifyFileBtn.disabled = false;
+            addBtn.disabled = false;
+            commitBtn.disabled = false;
+            pushBtn.disabled = false;
+            pullBtn.disabled = false;
+
+            // Live init effect trigger: Generate the initial ".git tracker" visually and let it transition
+            setTimeout(() => {
+                const listLocal = document.getElementById('list-local');
+                listLocal.innerHTML = '';
+                
+                // Overlay effect on Directory area
+                const cardLoc = document.getElementById('stage-local');
+                const laser = document.createElement('div');
+                laser.className = 'laser-flash';
+                cardLoc.appendChild(laser);
+                setTimeout(() => laser.remove(), 700);
+
+                // Setup live tracking
+                updateBoard();
+                createFlyEffect('#initBtn', '#stage-local', '.git', 'var(--accent-init)');
+            }, 100);
+
+            printToTerminal('git init', [
+                'Initialized empty Git repository in D:/Ganesh Training/.git/',
+                'Created the hidden .git directory to keep track of commits.',
+                'The local environment is now an active Git Repository!'
+            ]);
+
+            triggerHighlight('stage-local');
+        }
+
+        // Action: File creation
+        function createFile() {
+            if (!isInitialized) return;
+            const val = filenameInput.value.trim();
+            if (!val) return;
+            
+            if (files[val]) {
+                alert("File already exists!");
+                return;
+            }
+            
+            files[val] = { name: val, state: 'working', type: 'untracked' };
+            
+            updateBoard();
+            triggerHighlight('stage-working');
+            
+            printToTerminal(`echo "" > ${val}`, [
+                `Local Workspace file '${val}' created. Detected as <b>untracked</b> (it doesn't exist in Staging or our Git Repo yet).`
+            ]);
+        }
+
+        // Action: Modify file contents
+        function modifyFile() {
+            if (!isInitialized) return;
+            const val = filenameInput.value.trim();
+            if (!val) return;
+            
+            if (!files[val]) {
+                // Creates as untracked if not exists
+                files[val] = { name: val, state: 'working', type: 'untracked' };
+                updateBoard();
+                triggerHighlight('stage-working');
+                printToTerminal(`echo "new edit" >> ${val}`, [`Workspace file '${val}' generated (untracked).`]);
+            } else {
+                // Change status back to working and mark as modified
+                if (files[val].state === 'staged' || files[val].state === 'committed' || files[val].state === 'remote') {
+                    files[val].state = 'working';
+                }
+                files[val].type = 'modified';
+                updateBoard();
+                triggerHighlight('stage-working');
+                printToTerminal(`echo "changes" >> ${val}`, [
+                    `Modifications saved to '${val}'. Status changed to <b>modified</b> (it must be staged again with 'git add').`
+                ]);
+            }
+        }
+
+        // Action: Git staging add
+        function gitAdd() {
+            if (!isInitialized) return;
+            let addedCount = 0;
+            let currentModified = [];
+
+            Object.values(files).forEach(f => {
+                if (f.state === 'working') {
+                    addedCount++;
+                    currentModified.push(f.name);
+                    f.state = 'staged';
+                    f.type = 'staged';
+                    setTimeout(() => {
+                        createFlyEffect(`#stage-working`, `#stage-staging`, f.name, '#fbbf24');
+                    }, addedCount * 120);
+                }
+            });
+
+            if (addedCount === 0) {
+                printToTerminal('git add .', ['Nothing to add. No modified or untracked file changes were found.']);
+                return;
+            }
+
+            setTimeout(() => {
+                updateBoard();
+                triggerHighlight('stage-staging');
+            }, (addedCount * 120) + 120);
+
+            printToTerminal('git add .', [
+                `Changes staged: ${currentModified.join(', ')}`,
+                `Staging Area updated (files are now indexed and prepared for your next commit).`
+            ]);
+        }
+
+        // Action: Commit snapshot creation
+        function gitCommit() {
+            if (!isInitialized) return;
+            let stagedFiles = Object.values(files).filter(f => f.state === 'staged');
+            if (stagedFiles.length === 0) {
+                printToTerminal('git commit -m "update"', ['Commit aborted: Staging index is empty. Add changes with ' + 'git add' + ' first.']);
+                return;
+            }
+
+            let hash = Math.floor(Math.random() * 16777215).toString(16).substring(0, 7);
+            let msg = `Update ${stagedFiles.map(f => f.name).join(' & ')}`;
+            
+            stagedFiles.forEach((f, idx) => {
+                f.state = 'committed';
+                f.type = 'committed';
+                setTimeout(() => {
+                    createFlyEffect(`#stage-staging`, `#stage-local`, f.name, '#34d399');
+                }, idx * 100);
+            });
+
+            commits.push({
+                hash: hash,
+                msg: msg,
+                files: stagedFiles.map(f => f.name)
+            });
+
+            setTimeout(() => {
+                updateBoard();
+                triggerHighlight('stage-local');
+            }, (stagedFiles.length * 100) + 100);
+
+            printToTerminal(`git commit -m "${msg}"`, [
+                `[main ${hash}] ${msg}`,
+                ` ${stagedFiles.length} file(s) changed. Changes saved to Local Repository (.git database)!`
+            ]);
+        }
+
+        // Action: Remote upload via push
+        function gitPush() {
+            if (!isInitialized) return;
+            let committedFiles = Object.values(files).filter(f => f.state === 'committed');
+            if (committedFiles.length === 0) {
+                printToTerminal('git push origin main', ['Branch up to date. No new local commits need to be pushed to GitHub.']);
+                return;
+            }
+
+            committedFiles.forEach((f, idx) => {
+                f.state = 'remote';
+                f.type = 'remote';
+                
+                // Duplicate elements on server visually
+                setTimeout(() => {
+                    createFlyEffect(`#stage-local`, `#stage-remote`, f.name, '#a78bfa');
+                    
+                    const listRemote = document.getElementById('list-remote');
+                    const emptyPl = listRemote.querySelector('.empty-placeholder');
+                    if (emptyPl) emptyPl.remove();
+                    
+                    listRemote.innerHTML += `
+                        <div class="file-item remote" id="file-remote-${f.name}">
+                            <span>📄 ${f.name}</span>
+                            <span style="color: var(--accent-remote); font-size: 0.7rem;">(pushed)</span>
+                        </div>
+                    `;
+                    
+                }, idx * 120);
+            });
+
+            setTimeout(() => {
+                updateBoard();
+                triggerHighlight('stage-remote');
+            }, (committedFiles.length * 120) + 120);
+
+            printToTerminal('git push origin main', [
+                'Verifying credentials...',
+                'SSH key verified (Hi AzDevops143!).',
+                'Uploading objects to github.com:AzDevops143/ganesh-training-trial.git',
+                ' * [new branch]      main -> main (Local history is now saved online)'
+            ]);
+        }
+
+        // Action: Remote import via pull (Sync All 3 Local Stages)
+        function gitPull() {
+            if (!isInitialized) return;
+
+            const listRemote = document.getElementById('list-remote');
+            const hasRemoteFile = listRemote.querySelector('#file-remote-README\\.md');
+            const workspaceHasReadme = files['README.md'];
+
+            if (hasRemoteFile && !workspaceHasReadme) {
+                // Target synchronization across all three local databases
+                files['README.md'] = { name: 'README.md', state: 'working', type: 'untracked' };
+
+                // Visual flying data fragments streaming simultaneously to all local points
+                createFlyEffect('#file-remote-README\\.md', '#stage-local', 'README.md (db)', 'var(--accent-local)');
+                setTimeout(() => {
+                    createFlyEffect('#file-remote-README\\.md', '#stage-staging', 'README.md (idx)', 'var(--accent-stage)');
+                }, 150);
+                setTimeout(() => {
+                    createFlyEffect('#file-remote-README\\.md', '#stage-working', 'README.md', 'var(--accent-work)');
+                }, 300);
+
+                // Add to Local repo commit snapshots to keep logs valid
+                let hash = Math.floor(Math.random() * 16777215).toString(16).substring(0, 7);
+                commits.unshift({
+                    hash: hash,
+                    msg: "Merge remote 'README.md' from origin/main",
+                    files: ['README.md']
+                });
+
+                setTimeout(() => {
+                    updateBoard();
+                    triggerHighlight('stage-working');
+                    triggerHighlight('stage-staging');
+                    triggerHighlight('stage-local');
+                }, 900);
+
+                printToTerminal('git pull origin main', [
+                    'Fetching remote branch meta-data...',
+                    'From github.com:AzDevops143/ganesh-training-trial.git',
+                    ' * branch            main       -> FETCH_HEAD',
+                    'Checking for missing objects...',
+                    'Unpacking & tracking remote assets...',
+                    ' -> Local Repo (.git) updated with remote commit.',
+                    ' -> Staging area and file index updated.',
+                    ' -> Workspace: "README.md" successfully downloaded and merged!'
+                ]);
+            } else {
+                // Sync checking transitions for active local assets
+                let items = listRemote.getElementsByClassName('file-item');
+                if (items.length > 0) {
+                    for (let i = 0; i < items.length; i++) {
+                        const filename = items[i].innerText.split('\n')[0].replace('📄 ', '');
+                        setTimeout(() => {
+                            createFlyEffect('#stage-remote', '#stage-working', filename, 'var(--accent-work)');
+                        }, i * 150);
+                    }
+                }
+
+                printToTerminal('git pull origin main', [
+                    'Connecting to github.com...',
+                    'Fetching branch tracking data...',
+                    'Already up to date. Local Workspace matches remote GitHub history.'
+                ]);
+            }
+        }
+
+        function resetAll() {
+            files = {};
+            commits = [];
+            isInitialized = false;
+
+            overlay.classList.remove('hidden');
+            localScope.classList.add('not-initialized');
+            remoteScope.classList.add('not-initialized');
+            localScope.classList.remove('initialized');
+
+            // Block interactive states
+            initBtn.disabled = false;
+            filenameInput.value = 'index.html'; // reset standard file value
+            filenameInput.disabled = true;
+            createFileBtn.disabled = true;
+            modifyFileBtn.disabled = true;
+            addBtn.disabled = true;
+            commitBtn.disabled = true;
+            pushBtn.disabled = true;
+            pullBtn.disabled = true;
+
+            // Restoring base index file mock in GitHub cloud list
+            const listRemote = document.getElementById('list-remote');
+            listRemote.innerHTML = `
+                <div class="file-item remote" id="file-remote-README.md">
+                    <span>📄 README.md</span>
+                    <span style="color: var(--accent-remote); font-size: 0.7rem;">(origin)</span>
+                </div>
+            `;
+
+            updateBoard();
+            consoleTerm.innerHTML = '';
+            printToTerminal('visualizer --reset', [
+                'Directory tracking system wiped. Run the "git init" command above to construct a new repository.'
+            ]);
+        }
+
+        // Initialize state view
+        updateBoard();
+    </script>
+</body>
+</html>
